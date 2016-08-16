@@ -1,0 +1,3 @@
+boto3==1.4.0
+botocore==1.4.43
+google-api-python-client==1.5.1
