@@ -15,7 +15,7 @@ from apiclient.http import MediaIoBaseDownload
 
 scopes = 'https://www.googleapis.com/auth/drive'
 cs = 'client_secret.json'
-appn = 'SyncMonster Alpha'
+appn = 'Dissect ALPHA'
 
 class GoogleDrive (CloudAccount):
     def __init__ (self):

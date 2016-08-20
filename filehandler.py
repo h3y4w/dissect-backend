@@ -1,20 +1,49 @@
 import subprocess
 import os
-from SMByteConvert import ByteConvert
+from byteconvert import ByteConvert
+import time
+import boto3
+import queuehandler
+info=[]
+with open("/home/deno/.aws_creds") as f:
+    for line in f:
+        info.append(line.replace('\n',''))
+access_id = info[0]
+access_secret = info[1]
 
 class FileHandler (object):
     FILE = None
-
+    s3 = None
+    progressQueue=None
     def __init__(self, FILE):
         self.FILE=FILE
+        self.s3 = boto3.client(
+            's3',
+            aws_access_key_id=access_id,
+            aws_secret_access_key=access_secret
+        )
+        self.DQ = queuehandler.DissectQueue()
+
+    def prepare (self):
+        self.FILE['path'] = '/home/deno/processing/{}/{}/'.format(self.FILE['user'],time.strftime("%Y-%m-%d_%H:%M:%S",time.gmtime()))
+        self.FILE['FULL_PATH'] = self.FILE['path'] + self.FILE['id']
+        prepare_command = 'mkdir -p {}'.format(self.FILE['path'])
+        #subprocess.check_call(prepare_command)
+        os.system(prepare_command)
+        self.downloadFromS3()
+
+    def downloadFromS3 (self):
+        self.DQ.sendToUserQueue(self.FILE,10)
+        with open(self.FILE['FULL_PATH'],'wb') as data:
+            self.s3.download_fileobj(self.FILE['bucket'],self.FILE['id'], data)
 
     def process(self):
 
         self.findSplitSize()
-        fileName = self.FILE['id']
+        fileName = self.FILE['FULL_PATH']
         if self.FILE['compress']=='SM-7Z':
-            fileName = self.FILE['id'] + '.7z'
-            compress_7z_command = ['7z', 'a', fileName, self.FILE['id']]
+            fileName+='.7z'
+            compress_7z_command = ['7z', 'a', fileName, self.FILE['FULL_PATH']]
             subprocess.check_call(compress_7z_command)
 
         splitName= fileName+'.'
@@ -22,8 +51,10 @@ class FileHandler (object):
         split_command = ['split', '--bytes', sizeandunit, '-d', '-a', '3', fileName, splitName]
         subprocess.check_call(split_command)
 
+    def upload(self):
+        pass
     def findSplitSize(self):
-        self.FILE['size']=os.path.getsize(self.FILE['id'])
+        self.FILE['size']=os.path.getsize(self.FILE['FULL_PATH'])
             # CLEANS THIS UP
         self.FILE['size']
         p=[]
@@ -49,8 +80,13 @@ class FileHandler (object):
         #it will convert the all numbers into bytes
 
 
+    def reset(self): #cleans up files to retry file compression
+        reset_command = 'rm {}.*'.format(self.FILE['FILE_PATH'])
+        subprocess.check_call(reset_command)
 
-#test = SMFileHandler()
-#FILE = {'compress':'SM-7Z', 'id':'test.mov','ratio':'3', 'unit':'m', 'size':31.9}
-#test.setFile(FILE)
-#test.File()
+
+    def purge(self): #deletes folder and cleans file
+        purge_command = 'rm -r {}*'.format(self.FILE['path'])
+        subprocess.check_call(purge_command)
+
+
