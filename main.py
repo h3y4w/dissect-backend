@@ -1,4 +1,5 @@
 import boto3
+import json
 
 class ServiceManager(object):
     ec2 = None
@@ -30,10 +31,14 @@ class ServiceManager(object):
         return self.sqs.Queue(self.queue_url[self.queue_type])
 
     def launchInstance(self, FILE):
+        #print FILE
+        string_json = json.dumps(FILE)
+        #string_json = json.dumps(tmp_json)
+        print string_json
         FILE['sizeGB']=5
 
-        with open('/home/deno/Programs/python/dissect-backend/services/prepare.sh') as prepare_file:
-            UserData=prepare_file.read()
+        with open('prepare.sh') as prepare_file:
+            UserData=prepare_file.read() % string_json
         instance = self.ec2.create_instances(ImageId=self.snapshotId,
                                         MinCount=1,
                                         MaxCount=1,
@@ -114,6 +119,6 @@ access_id = info[0]
 access_secret = info[1]
 
 app = ServiceManager('upload')
-FILE={}
+FILE={'size':'sdsa'}
 app.launchInstance(FILE)
 
