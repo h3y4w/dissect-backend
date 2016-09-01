@@ -6,7 +6,6 @@ with open("/home/deno/.aws_creds") as f:
         info.append(line.replace('\n',''))
 access_id = info[0]
 access_secret = info[1]
-sqs_base_url = "https://sqs.us-west-2.amazonaws.com/748786065780/"
 upload_sqs_url = "https://sqs.us-west-2.amazonaws.com/748786065780/SM-regularQueue"
 download_sqs_url = ""
 process_sqs_url = "https://sqs.us-west-2.amazonaws.com/748786065780/process-queue"
@@ -16,7 +15,7 @@ class DissectQueue (object):
     downloadQueue = None
     uploadQueue = None
     processQueue = None
-
+    dissectUserUrl = 'DISSECT-FILE-PROGESS_{}_{}'
     def __init__(self):
 
         self.sqs = boto3.resource('sqs', region_name='us-west-2', aws_access_key_id=access_id, \
@@ -39,6 +38,9 @@ class DissectQueue (object):
                 error = 'id'
                 FILE['id'] = message.message_attributes.get('fileID').get('StringValue') #turn int()
 
+                error='name'
+                FILE['name'] = message.message_attributes.get('fileID').get('StringValue')
+
                 error = 'compress'
                 FILE['compress'] = message.message_attributes.get('fileCompress').get('StringValue')
 
@@ -47,8 +49,6 @@ class DissectQueue (object):
 
                 FILE['user'] = 3
                 # ADD USER ID HERE
-                error = "bucket"
-                FILE['bucket'] = 'sm-uploaded-files'
             except Exception as e:
                 print str(e)
                 print 'Message attribute: '
@@ -57,6 +57,7 @@ class DissectQueue (object):
             else:
                 print 'Account Allocation=' + FILE['aa']
                 print 'File ID=' + FILE['id']
+                print 'FILE name=' + FILE['name']
                 print 'file compress=' + FILE['compress']
 
                 success = self.processMessage(message,FILE,timeout=10)
@@ -74,7 +75,7 @@ class DissectQueue (object):
 
     def createUserQueue(self,FILE): #creates a temp queue for the user file information for web services
         FILE['id'] = FILE['id'].replace('.','')
-        qname='DISSECT-FILE-PROGESS_{}_{}'.format(FILE['user'],FILE['id'])
+        qname=self.dissectUserUrl.format(FILE['user'],FILE['id'])
         self.sqs.create_queue(
             QueueName=qname,
         )

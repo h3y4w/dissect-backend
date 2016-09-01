@@ -1,6 +1,4 @@
 #!/bin/bash
-export FILE='%s'
-
 base_url="52.43.7.201"
 function downloadCurrentVersion {
     curl -H "Accept: application/json" -X GET "$base_url/downloadCurrentVersion"  > /home/ubuntu/run.sh
@@ -19,9 +17,9 @@ function getRepo {
 
 
 
-
 downloadCurrentVersion
 getRepo
+echo "%s" > /home/ubuntu/FILE_info
 bash /home/ubuntu/run.sh
 
 

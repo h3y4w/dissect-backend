@@ -5,6 +5,10 @@ class ServiceManager(object):
     ec2 = None
     sqs = None
     snapshotId = None
+    FILE = None
+    queue = None
+    dissectUserUrl='DISSECT_USER_QUEUE-{}_{}'
+    sqs_base_url = "https://sqs.us-west-2.amazonaws.com/748786065780/"
 
     queue_url={'upload': "https://sqs.us-west-2.amazonaws.com/748786065780/SM-regularQueue",
                'download': None
@@ -24,19 +28,25 @@ class ServiceManager(object):
         self.queue_type = queue_type
 
     def run (self):
-        queue = self.connectToQueue()
-        self.checkQueue(queue)
+        self.connectToQueue()
+
+        while True: #add some variable which request a rest api. if it says stop all services it turns to false
+            if self.queue_type=='upload':
+                self.checkUploadQueue()
+                print "SUCCESSFULLY EXITED in run method"
+                exit(0)
+            else:
+                'only queue type available currently is upload'
+            print 'done faggot'
 
     def connectToQueue(self):
-        return self.sqs.Queue(self.queue_url[self.queue_type])
+        self.queue = self.sqs.Queue(self.queue_url[self.queue_type])
 
-    def launchInstance(self, FILE):
-        #print FILE
-        string_json = json.dumps(FILE)
-        #string_json = json.dumps(tmp_json)
+    def launchInstance(self):
+        string_json = json.dumps(self.FILE)
         print string_json
-        FILE['sizeGB']=5
 
+        self.createUserQueue()
         with open('prepare.sh') as prepare_file:
             UserData=prepare_file.read() % string_json
         instance = self.ec2.create_instances(ImageId=self.snapshotId,
@@ -52,7 +62,7 @@ class ServiceManager(object):
                                             {
                                                 'DeviceName': '/dev/sdb',
                                                 'Ebs': {
-                                                    'VolumeSize': FILE['sizeGB'],
+                                                    'VolumeSize': self.FILE['sizeGB'],
                                                     'DeleteOnTermination': True,
                                                     'VolumeType': 'gp2', #'Iops': 123, NOT SUPPORTED FOR gp2
                                                     'Encrypted': False
@@ -63,13 +73,15 @@ class ServiceManager(object):
 
         instance.wait_until_running()
         instance.load()
-        print(instance.public_dns_name)
+        self.sendInstanceDNS(instance.public_dns_name)
+        print instance.public_dns_name
+        print "DONE"
 
     def terminateInstance(self):
         pass
 
-    def checkQueue(self,queue):
-        messages=queue.receive_messages(MaxNumberOfMessages=10,WaitTimeSeconds=10,MessageAttributeNames=['All'])
+    def checkUploadQueue(self):
+        messages=self.queue.receive_messages(MaxNumberOfMessages=10,WaitTimeSeconds=10,MessageAttributeNames=['All'])
         for message in messages:
             FILE={}
             error = None
@@ -80,16 +92,20 @@ class ServiceManager(object):
                 error = 'id'
                 FILE['id'] = message.message_attributes.get('fileID').get('StringValue') #turn int()
 
+                error='name'
+                FILE['name'] = message.message_attributes.get('fileName').get('StringValue')
+
                 error = 'compress'
                 FILE['compress'] = message.message_attributes.get('fileCompress').get('StringValue')
 
                 error = "ratio"
                 FILE['ratio'] = 3 # ADD OPTION IN QUEUE
 
-                FILE['user'] = 3
-                # ADD USER ID HERE
-                error = "bucket"
-                FILE['bucket'] = 'sm-uploaded-files'
+                error = 'user'
+                FILE['user'] = message.message_attributes.get('user').get('StringValue')
+
+
+                FILE['sizeGB'] = 5 #MAKE SURE TO ADD GB SIZE INDEX FOR INSTANCE CREATION
             except Exception as e:
                 print str(e)
                 print 'Message attribute: '
@@ -98,17 +114,31 @@ class ServiceManager(object):
             else:
                 print 'Account Allocation=' + FILE['aa']
                 print 'File ID=' + FILE['id']
+                print 'FILE name=' + FILE['name']
                 print 'file compress=' + FILE['compress']
+                self.FILE = FILE
+                self.launchInstance()
 
-                success = self.processMessage(FILE)
-                if success is True:
-                    #message.delete()
-                    print 'DELETE MESSAGE HERE IT WAS SUCESSFUL'
-                else:
-                    print "HERE YOU HANDLE ERROR"
 
-    def processMessage(self,FILE):
-        self.launchInstance(FILE)
+    def createUserQueue(self): #creates a temp queue for the user file information for web services
+        qname=self.dissectUserUrl.format(self.FILE['user'],self.FILE['id'])
+        self.sqs.create_queue(
+            QueueName=qname,
+        )
+        self.FILE['queue_url']=self.sqs_base_url+qname
+
+    def sendInstanceDNS(self, DNS):
+        progressQueue = self.sqs.Queue(self.FILE['queue_url'])
+        progressQueue.send_message(
+            MessageBody='VM INFO',
+            DelaySeconds=0,
+            MessageAttributes={
+                'DNS': {
+                    'StringValue': DNS,
+                    'DataType': 'String'
+                }
+            }
+        )
 
 
 info=[]
@@ -119,6 +149,6 @@ access_id = info[0]
 access_secret = info[1]
 
 app = ServiceManager('upload')
-FILE={'size':'sdsa'}
-app.launchInstance(FILE)
+app.run()
+
 
