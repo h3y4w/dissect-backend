@@ -1,5 +1,10 @@
 import boto3
 import json
+import boto3conf
+import socket
+import thread
+import requests
+import os
 
 class ServiceManager(object):
     ec2 = None
@@ -9,7 +14,6 @@ class ServiceManager(object):
     queue = None
     dissectUserUrl='DISSECT_USER_QUEUE-{}_{}'
     sqs_base_url = "https://sqs.us-west-2.amazonaws.com/748786065780/"
-
     queue_url={'upload': "https://sqs.us-west-2.amazonaws.com/748786065780/SM-regularQueue",
                'download': None
                }
@@ -18,11 +22,11 @@ class ServiceManager(object):
 
     def __init__ (self,queue_type):
 
-        self.sqs = boto3.resource('sqs', region_name='us-west-2', aws_access_key_id=access_id,
-                                  aws_secret_access_key=access_secret)
+        self.sqs = boto3.resource('sqs', region_name='us-west-2', aws_access_key_id=boto3conf.info[0],
+                                  aws_secret_access_key=boto3conf.info[1])
 
-        self.ec2 = boto3.resource('ec2', region_name='us-west-2', aws_access_key_id=access_id,
-                                  aws_secret_access_key=access_secret)
+        self.ec2 = boto3.resource('ec2', region_name='us-west-2', aws_access_key_id=boto3conf.info[0],
+                                  aws_secret_access_key=boto3conf.info[1])
         self.snapshotId='ami-d732f0b7'
 
         self.queue_type = queue_type
@@ -42,40 +46,19 @@ class ServiceManager(object):
     def connectToQueue(self):
         self.queue = self.sqs.Queue(self.queue_url[self.queue_type])
 
-    def launchInstance(self):
-        string_json = json.dumps(self.FILE)
-        print string_json
+    def launchInstance(self,FILE):
+        address = 'http://'+os.environ['api_ip']+':5000/workers/spawn'
+        r=requests.post(address,json=FILE)
+        data=r.json()
+        if data['Success'] is not None:
+            self.pingInstance(data['Success']['dns'],'5000')#MAKE FIRST PING MAKE SURE IT IS SUCCESSFULLY SETUP
 
-        self.createUserQueue()
-        with open('prepare.sh') as prepare_file:
-            UserData=prepare_file.read() % string_json
-        instance = self.ec2.create_instances(ImageId=self.snapshotId,
-                                        MinCount=1,
-                                        MaxCount=1,
-                                        SecurityGroupIds=[
-                                            'sg-b2ba5fcb',
-                                        ],
-                                        UserData=UserData,
-                                        InstanceType='t2.micro',
-                                        KeyName='heyaws',
-                                        BlockDeviceMappings=[
-                                            {
-                                                'DeviceName': '/dev/sdb',
-                                                'Ebs': {
-                                                    'VolumeSize': self.FILE['sizeGB'],
-                                                    'DeleteOnTermination': True,
-                                                    'VolumeType': 'gp2', #'Iops': 123, NOT SUPPORTED FOR gp2
-                                                    'Encrypted': False
-                                                },
-                                            },
-                                        ]
-                                        )[0]
-
-        instance.wait_until_running()
-        instance.load()
-        self.sendInstanceDNS(instance.public_dns_name)
-        print instance.public_dns_name
-        print "DONE"
+    def pingInstance(self,dns,port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(dns,port)
+        while True:
+            sock.send('ping')
+            print 'Response: ', sock.recv(1024)
 
     def terminateInstance(self):
         pass
@@ -116,16 +99,8 @@ class ServiceManager(object):
                 print 'File ID=' + FILE['id']
                 print 'FILE name=' + FILE['name']
                 print 'file compress=' + FILE['compress']
-                self.FILE = FILE
-                self.launchInstance()
+                self.launchInstance(FILE)
 
-
-    def createUserQueue(self): #creates a temp queue for the user file information for web services
-        qname=self.dissectUserUrl.format(self.FILE['user'],self.FILE['id'])
-        self.sqs.create_queue(
-            QueueName=qname,
-        )
-        self.FILE['queue_url']=self.sqs_base_url+qname
 
     def sendInstanceDNS(self, DNS):
         progressQueue = self.sqs.Queue(self.FILE['queue_url'])
@@ -141,14 +116,9 @@ class ServiceManager(object):
         )
 
 
-info=[]
-with open("/home/deno/.aws_creds") as f:
-    for line in f:
-        info.append(line.replace('\n',''))
-access_id = info[0]
-access_secret = info[1]
 
-app = ServiceManager('upload')
+app = ServiceManager('upload') #change to os.environ['manager_type']
 app.run()
+#thread.start_new_thread(app.run,())
 
 
