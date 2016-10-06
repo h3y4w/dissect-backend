@@ -47,7 +47,7 @@ class DissectQueue (object):
                 error = "ratio"
                 FILE['ratio'] = 3 # ADD OPTION IN QUEUE
 
-                FILE['user'] = 3
+                FILE['user_id'] = 3
                 # ADD USER ID HERE
             except Exception as e:
                 print str(e)

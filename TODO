@@ -1,0 +1,3 @@
+parse messages using message.body etc
+create queues for users
+parse event triggering correctly

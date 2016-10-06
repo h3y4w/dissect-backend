@@ -47,18 +47,22 @@ class ServiceManager(object):
         self.queue = self.sqs.Queue(self.queue_url[self.queue_type])
 
     def launchInstance(self,FILE):
-        address = 'http://'+os.environ['api_ip']+':5000/workers/spawn'
+        address = '{}/workers/spawn'.format(os.environ['api_url'])
         r=requests.post(address,json=FILE)
         data=r.json()
         if data['Success'] is not None:
-            self.pingInstance(data['Success']['dns'],'5000')#MAKE FIRST PING MAKE SURE IT IS SUCCESSFULLY SETUP
+            self.pingInstance(data['Success']['Instance'],'9999')#MAKE FIRST PING MAKE SURE IT IS SUCCESSFULLY SETUP
 
-    def pingInstance(self,dns,port):
+    def pingInstance(self,instance_info,port):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect(dns,port)
+        sock.connect(instance_info['dns'],port)
+        sock.send('PING UNO')
         while True:
-            sock.send('ping')
-            print 'Response: ', sock.recv(1024)
+            data=sock.recv(1024)
+            if data is not None:
+                response=json.dumps(data)
+                if response['Job']['Success'] is True:
+                    requests.delete('{}/workers/{}/active'.format(os.environ['api_url'], instance_info['id']))
 
     def terminateInstance(self):
         pass
@@ -85,7 +89,7 @@ class ServiceManager(object):
                 FILE['ratio'] = 3 # ADD OPTION IN QUEUE
 
                 error = 'user'
-                FILE['user'] = message.message_attributes.get('user').get('StringValue')
+                FILE['user_id'] = message.message_attributes.get('user').get('StringValue')
 
 
                 FILE['sizeGB'] = 5 #MAKE SURE TO ADD GB SIZE INDEX FOR INSTANCE CREATION
